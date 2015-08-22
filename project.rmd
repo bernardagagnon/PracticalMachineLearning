@@ -1,0 +1,133 @@
+---
+title: "PML Project"
+date: "Thursday, August 20, 2015"
+output: html_document
+---
+
+# Prediction of Weight Lifting Activity from sensor data 
+
+
+## Executive Summary
+
+Six young health participants were asked to perform one set of 10 repetitions of the Unilateral Dumbbell Biceps Curl in five different fashions: exactly according to the specification (Class A), throwing the elbows to the front (Class B), lifting the dumbbell only halfway (Class C), lowering the dumbbell only halfway (Class D) and throwing the hips to the front (Class E).
+
+In this report, we use a random forest classifier to train a model that will recognize the bicept curl classe according to accelerator readings on the arm, the forearm, the belt and the dumbbell itself. 
+
+The trained model shows 99.39% accuracy, as verified on test data set aside from the training model.
+
+
+## Source of Data
+
+The data stems from the following research paper:
+
+Velloso, E.; Bulling, A.; Gellersen, H.; Ugulino, W.; Fuks, H. Qualitative Activity Recognition of Weight Lifting Exercises. Proceedings of 4th International Conference in Cooperation with SIGCHI (Augmented Human '13) . Stuttgart, Germany: ACM SIGCHI, 2013.
+
+and available at <http://groupware.les.inf.puc-rio.br/har#weight_lifting_exercises>
+
+## Exploration of Data
+
+The data is available as a csv file. It was imported in Excel so that it was easier to browse. It demonstrated the following characteristics:
+
+- Some cells contained "NA" or "#DIV/0!" values. In fact, only some columns contained them and these were very sparsely populated. These were always either empty or "NA", except when the corresponding "new window" value was "yes". After reading the article mentionned above, it appears these were derived features computed from time windows from 0.5 to 2.5 seconds.
+- The first 7 columns contained only meta-data
+- The last column, named "classe" contains the labeled activity, from A to E.
+
+## Cleaning of Data
+
+Before performing the model training, it was decided to remove the time-window derived features. Following that, all columns that contained only NA values would be eliminated as well.
+
+So the procedure performed is the following:
+
+- Reading in a R data.frame. All cells having the values strings "NA" or "#DIV/0!" are considered to be "NA" 
+- Removal of records (lines) that do not contain raw accelerator data. These were identified by the cell "new_window" not being equal to the string "no"
+- Removal of meta-data columns (1 to 7)
+- Removal of all columns that were all NAs
+- Conversion of all columns to numeric type, except the last which is left as a factor variable
+
+
+```{r,echo=FALSE}
+setwd("c:\\users\\bernard\\cours en cours\\practical machine learning\\project")
+```
+
+```{r}
+data <- read.table("training/pml-training.csv",header=T,sep=",",na.strings=c("NA","#DIV/0!"))
+
+# columns to remove
+notpredictors = c(1,2,3,4,5,6,7)
+data_clean <- data[data$new_window=="no",-notpredictors]
+
+# remove all the columns that have all NAs
+data_clean <- data_clean[,colSums(is.na(data_clean))<nrow(data_clean)]
+
+# convert all columns to numeric except the last (classe)
+ncols <- ncol(data_clean)
+for (x in 1:(ncols-1))
+  data_clean[[x]] <- as.numeric(data_clean[[x]])
+```
+
+Note that the total column count is  `r ncols`, which means there are `r ncols-1` potential predictors.
+
+
+## Partitioning in Training and Testing Sets
+The caret createDataPartition function is used to partition the data in a training set (70% of records) and a testing set (30% of records)
+
+
+```{r,message=FALSE}
+library(caret)
+
+# partition in training and test set
+set.seed(12541)
+inTrain <- createDataPartition(y=data_clean$classe,p=0.7,list=F)
+training <- data_clean[inTrain,]
+testing  <- data_clean[-inTrain,]
+```
+
+## Model Training 
+As mentioned, a random forest model was selected for this experiment. The RandomForest R package was used because provide very rapid results compared to the caret's train function.
+
+The defaults were used for mtry (7, the sqrt(52)) and the number of trees (500). The confusion matrix obtained relates to the out-of-bag data, i.e. estimating the classification using the data not selected by boostrapping and the trees that have not been trained by such data (roughly 1/3 of the trees).
+
+```{r,message=FALSE}
+library(randomForest)
+modrf <- randomForest(classe~.,data=training)
+training_cm <- confusionMatrix(as.table(modrf$confusion[,1:5]))
+training_cm
+```
+
+## Model Prediction on Test Set
+
+Applying the model to the testing set provides the following confusion matrix
+
+```{r}
+pred <- predict(modrf,testing)
+cm <- confusionMatrix (testing$classe,pred) # this is the caret function
+cm
+```
+
+We see that the accuracy on the test set (`r cm$overall[1]`) is only slighly below the estimate from the random forest algorithm (`r training_cm$overall[1]`).
+
+## Model Analysis
+
+The following plot shows the evolution of the error rate of the different classifications based on the number of trees being considered:
+
+```{r, fig.width=9,fig.height=7,message=FALSE}
+# plot the error rate
+
+layout(matrix(c(1,2),nrow=1), width=c(4,1)) 
+par(mar=c(5,4,4,0)) #No margin on the right side
+plot(modrf,main="Error by tree count")
+par(mar=c(5,0,4,2)) #No margin on the left side
+plot(c(0,1),type="n", axes=F, xlab="", ylab="")
+legend("top", colnames(modrf$err.rate),col=1:6,cex=0.8,fill=1:6)
+```
+
+The importance of the predictors can be plotted as well:
+```{r, fig.width=9,fig.height=7,message=FALSE}
+# variable importance plot
+varImpPlot(modrf)   
+```
+
+Finally, a pairs plot can show how the classe and the four most relevant predictors are related:
+```{r, fig.width=9,fig.height=7,message=FALSE}
+pairs(testing[,c("classe","roll_belt","yaw_belt","pitch_forearm","magnet_dumbbell_z")])
+```
