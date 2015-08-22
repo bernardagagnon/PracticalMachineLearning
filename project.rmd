@@ -4,7 +4,7 @@ date: "Thursday, August 20, 2015"
 output: html_document
 ---
 
-# Prediction of Weight Lifting Activity from sensor data 
+# Prediction of Weight Lifting Activity from Sensor Data 
 
 
 ## Executive Summary
